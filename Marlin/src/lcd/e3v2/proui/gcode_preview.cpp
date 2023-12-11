@@ -83,7 +83,7 @@ void getValue(const char * const buf, PGM_P const key, float &value) {
 }
 
 bool Preview::hasPreview() {
-  const char * const tbstart = PSTR("; thumbnail begin " STRINGIFY(THUMBWIDTH) "x" STRINGIFY(THUMBHEIGHT));
+  const char * const tbstart = PSTR("; thumbnail_JPG begin " STRINGIFY(THUMBWIDTH) "x" STRINGIFY(THUMBHEIGHT));
   const char *posptr = nullptr;
   uint32_t indx = 0;
   float tmp = 0;
@@ -211,8 +211,10 @@ bool Preview::valid() {
 }
 
 void Preview::show() {
-  const uint8_t xpos = ((DWIN_WIDTH) - fileprop.thumbwidth) / 2,
-                ypos = (205 - fileprop.thumbheight) / 2 + 87;
+  const uint8_t xpos = ((DWIN_WIDTH) - fileprop.thumbwidth) / 2;
+        uint8_t ypos = (205 - fileprop.thumbheight) / 2 + 87;
+  // move the thumbnail further up if prop text is not present
+  if (!fileprop.time && !fileprop.filament && !fileprop.layer && !fileprop.width) ypos -= 40;
   DWIN_ICON_Show(xpos, ypos, 0x00);
 }
 
