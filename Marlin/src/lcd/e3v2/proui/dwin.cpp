@@ -2823,7 +2823,8 @@ void SetFlow() { SetPIntOnClick(FLOW_EDIT_MIN, FLOW_EDIT_MAX, []{ planner.refres
       #endif
 
       if (ABS(MeshViewer.max - MeshViewer.min) < BED_TRAMMING_PROBE_TOLERANCE) {
-        EXIT_TRAMWIZ:
+        // EXIT_TRAMWIZ:
+        // Commented out because feature does not work with it
         DWINUI::Draw_CenteredString(140, F("Corners leveled"));
         DWINUI::Draw_CenteredString(160, F("Tolerance achieved!"));
       }
@@ -2839,7 +2840,8 @@ void SetFlow() { SetPIntOnClick(FLOW_EDIT_MIN, FLOW_EDIT_MAX, []{ planner.refres
             max = d;
             p = x + 2 * y;
           }
-          else { goto EXIT_TRAMWIZ; } // fail-safe if Corners are = 0.00
+          // else { goto EXIT_TRAMWIZ; } // fail-safe if Corners are = 0.00
+          // "fail-safe" commented out because feature does not work with it
         }
         switch (p) {
           case 0b00 : plabel = GET_TEXT_F(MSG_TRAM_FL); break;
