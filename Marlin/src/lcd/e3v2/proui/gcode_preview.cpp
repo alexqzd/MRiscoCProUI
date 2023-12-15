@@ -38,6 +38,8 @@
 #include "dwin_popup.h"
 #include "base64.h"
 
+#include "../../../gcode/queue.h"
+
 #define THUMBWIDTH 200
 #define THUMBHEIGHT 200
 
@@ -45,6 +47,10 @@
 // ??? what they do... Maybe Laser related?
 //IF_DISABLED(PROUI_EX, fileprop_t fileprop;)
 fileprop_t fileprop;
+
+#define START_CACHE_ADDR 10000;
+static uint16_t next_available_address = START_CACHE_ADDR; // first 5000 bytes are reserved for the bigger preview
+static std::map<std::string, uint16_t> image_cache;
 
 void fileprop_t::setnames(const char * const fn) {
   const uint8_t len = _MIN(sizeof(name) - 1, strlen(fn));
@@ -93,7 +99,7 @@ bool Preview::hasPreview() {
 
   card.openFileRead(fileprop.name);
 
-  char buf[256];
+  char buf[512];
   uint8_t nbyte = 1;
   while (!fileprop.thumbstart && nbyte > 0 && indx < 4 * sizeof(buf)) {
     nbyte = card.read(buf, sizeof(buf) - 1);
@@ -216,6 +222,110 @@ void Preview::show() {
   // move the thumbnail further up if prop text is not present
   if (!fileprop.time && !fileprop.filament && !fileprop.layer && !fileprop.width) ypos -= 40;
   DWIN_ICON_Show(xpos, ypos, 0x00);
+}
+
+bool Preview::find_and_decode_gcode_thumbnail(char *name, uint16_t *address, bool onlyCachedFileIcon) {
+  // Won't work if we don't copy the name
+  // for (char *c = &name[0]; *c; c++) *c = tolower(*c);
+
+  char file_name[strlen(name) + 1]; // Room for filename and null
+  sprintf_P(file_name, "%s", name);
+  char file_path[strlen(name) + 1 + MAXPATHNAMELENGTH]; // Room for path, filename and null
+  sprintf_P(file_path, "%s/%s", card.getWorkDirName(), file_name);
+
+  SERIAL_ECHOLNPGM("Looking for cached preview for file: ", file_path);
+  
+  auto it = image_cache.find(file_path);
+  if (it != image_cache.end()) { // already cached the result
+    if (it->second == 0) return false; // no image available for this file
+    *address = it->second; // return the cached address
+    SERIAL_ECHOLNPGM("Found cached preview for file: ", file_path);
+    return true;
+  } else if (onlyCachedFileIcon) return false;
+  
+  SERIAL_ECHOLNPGM("No cached preview for file: ", file_path);
+  SERIAL_ECHOLNPGM("Searching for preview in file: ", file_path);
+  const uint16_t buff_size = 256;
+  char public_buf[buff_size+1];
+  uint8_t output_buffer[6144];
+  uint32_t position_in_file = 0;
+  char *encoded_image = NULL;
+  
+  card.openFileRead(file_name);
+  uint8_t n_reads = 0;
+  int16_t data_read = card.read(public_buf, buff_size);
+  card.setIndex(card.getIndex()+data_read);
+  char key[] = "; thumbnail_JPG begin 40x50";
+  while(n_reads < 16 && data_read) { // Max 16 passes so we don't loop forever
+    EncoderState encoder_diffState = get_encoder_state();
+    if (encoder_diffState != ENCODER_DIFF_NO) return false; // User wants to scroll, stop searching
+
+    encoded_image = strstr(public_buf, key);
+    if (encoded_image) {
+      uint32_t index_bw = &public_buf[buff_size] - encoded_image;
+      position_in_file = card.getIndex() - index_bw;
+      break;
+    }
+    
+    card.setIndex(card.getIndex()-32);
+    data_read = card.read(public_buf, buff_size);
+    card.setIndex(card.getIndex()+data_read);
+
+    n_reads++;
+  }
+
+  // If we found the image, decode it
+  if (encoded_image) {
+    SERIAL_ECHOLNPGM("Found preview in file: ", file_path);
+    memset(public_buf, 0, sizeof(public_buf));
+    card.setIndex(position_in_file+23); // ; thumbnail begin <move here>220x124 99999
+    while (card.get() != ' '); // ; thumbnail begin 220x124 <move here>99999
+
+    char size_buf[10];
+    for (size_t i = 0; i < sizeof(size_buf); i++)
+    {
+      uint8_t c = card.get();
+      if (ISEOL(c)) {
+        size_buf[i] = 0;
+        break;
+      }
+      else
+        size_buf[i] = c;
+    }
+    uint16_t image_size = atoi(size_buf);
+    uint16_t stored_in_buffer = 0;
+    uint8_t encoded_image_data[image_size+1];
+    while (stored_in_buffer < image_size) {
+      char c = card.get();
+      if (ISEOL(c) || c == ';' || c == ' ') {
+        continue;
+      }
+      else {
+        encoded_image_data[stored_in_buffer] = c;
+        stored_in_buffer++;
+      }
+    }
+
+    encoded_image_data[stored_in_buffer] = 0;
+    unsigned int output_size = decode_base64(encoded_image_data, output_buffer);
+    if (next_available_address + output_size >= 0x7530) { // cache is full, invalidate it
+      next_available_address = START_CACHE_ADDR; // first 5000 bytes are reserved for the bigger preview
+      image_cache.clear();
+      SERIAL_ECHOLNPGM("Preview cache full, cleaning up...");
+    }
+    DWINUI::WriteToSRAM(next_available_address, output_size, output_buffer);
+    *address = next_available_address;
+    image_cache[file_path] = next_available_address;
+    next_available_address += output_size + 1;
+  } else // If we didn't find the image, mark it as image not available
+  {
+    SERIAL_ECHOLNPGM("No preview found in file: ", file_path);
+    image_cache[file_path] = 0;
+  }
+  
+  card.closefile();
+  queue.inject_P(PSTR("M117")); // Clear the message sent by the card API
+  return encoded_image;
 }
 
 #endif // DWIN_LCD_PROUI && HAS_GCODE_PREVIEW

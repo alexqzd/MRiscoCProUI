@@ -1019,6 +1019,11 @@ void onDrawFileName(MenuItemClass* menuitem, int8_t line) {
     make_name_without_ext(shift_name, card.longest_filename());
     icon = card.flag.filenameIsDir ? ICON_Folder : card.fileIsBinary() ? ICON_Binary : ICON_File;
     Draw_Menu_Line(line, icon, shift_name);
+    uint16_t thumb_address;
+    if (preview.find_and_decode_gcode_thumbnail(card.filename, &thumb_address, false)) {
+      // DWIN_ICON_Show(xpos, ypos, addr);
+      DWIN_ICON_Show(15, MYPOS(line)+2, thumb_address);
+    }
   }
 }
 

@@ -28,12 +28,16 @@
  * Date: 2022/09/03
  */
 
+#include <map>
+#include <string>
+
 class Preview {
 public:
   static void drawFromSD();
   static void invalidate();
   static bool valid();
   static void show();
+  static bool find_and_decode_gcode_thumbnail(char *name, uint16_t *address, bool onlyCachedFileIcon);
 private:
   static bool hasPreview();
 };
